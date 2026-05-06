@@ -1,20 +1,29 @@
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const body = (await request.json()) as HandleUploadBody;
   try {
-    const jsonResponse = await handleUpload({
-      body,
-      request,
-      onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ["audio/mpeg", "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/*"],
-        maximumSizeInBytes: 200 * 1024 * 1024, // 200MB
-      }),
-      onUploadCompleted: async () => {},
+    const { pathname } = await request.json();
+
+    const clientToken = await generateClientTokenFromReadWriteToken({
+      token: process.env.BLOB_READ_WRITE_TOKEN!,
+      pathname: pathname || "recording.mp3",
+      maximumSizeInBytes: 500 * 1024 * 1024, // 500MB
+      allowedContentTypes: [
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/mp4",
+        "audio/m4a",
+        "audio/x-m4a",
+        "audio/ogg",
+        "audio/wav",
+        "video/mp4",
+      ],
     });
-    return NextResponse.json(jsonResponse);
+
+    return NextResponse.json({ clientToken });
   } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    console.error("Blob token error:", error);
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
