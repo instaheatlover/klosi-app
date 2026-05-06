@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 
 type Step = "uploading" | "transcribing" | "analyzing" | "done";
 type Notes = {
@@ -38,14 +39,23 @@ export default function AnalyzePage() {
 
   async function runAnalysis(objectUrl: string, fileName: string, fileType: string) {
     try {
-      setStep("transcribing");
+      setStep("uploading");
 
-      // Fetch the file from the object URL and send as FormData — no size limit issues
+      // Fetch the file from the object URL
       const fileBlob = await fetch(objectUrl).then(r => r.blob());
       const file = new File([fileBlob], fileName, { type: fileType });
 
+      // Upload directly to Vercel Blob (bypasses the 4.5MB Vercel request limit)
+      const blob = await upload(fileName, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob-upload",
+      });
+
+      setStep("transcribing");
+
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("blobUrl", blob.url);
+      formData.append("fileName", fileName);
       formData.append("script", localStorage.getItem("klosi_script") || "");
       formData.append("noteTemplate", localStorage.getItem("klosi_note_template") || "");
       formData.append("icp", localStorage.getItem("klosi_icp") || "");
@@ -62,12 +72,9 @@ export default function AnalyzePage() {
 
       if (!res.ok) {
         const text = await res.text();
-        try {
-          const err = JSON.parse(text);
-          throw new Error(err.error || "Analysis failed");
-        } catch {
-          throw new Error(text || "Analysis failed");
-        }
+        let message = text;
+        try { message = JSON.parse(text).error || text; } catch {}
+        throw new Error(message || "Analysis failed");
       }
 
       const data = await res.json();
@@ -155,7 +162,7 @@ export default function AnalyzePage() {
         <div className="w-full max-w-3xl bg-[#131320] rounded-2xl p-12 flex flex-col items-center">
           <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
           <p className="text-white font-medium">
-            {step === "transcribing" ? "Transcribing your call..." : "Generating AI notes..."}
+            {step === "uploading" ? "Uploading your call..." : step === "transcribing" ? "Transcribing your call..." : "Generating AI notes..."}
           </p>
           <p className="text-[#94A3B8] text-sm mt-1">This usually takes 30–60 seconds</p>
         </div>

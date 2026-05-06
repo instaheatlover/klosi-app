@@ -5,6 +5,7 @@ import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
+import { del } from "@vercel/blob";
 
 export const maxDuration = 120;
 
@@ -13,13 +14,16 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
   let tmpPath: string | null = null;
+  let blobUrl: string | null = null;
 
   try {
-    // Accept FormData — no JSON body size limits
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
 
-    if (!file) {
+    // New flow: file is uploaded to Vercel Blob, we receive the URL
+    blobUrl = (formData.get("blobUrl") as string) || null;
+    const fileName = (formData.get("fileName") as string) || "recording.mp3";
+
+    if (!blobUrl) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
@@ -30,11 +34,18 @@ export async function POST(req: NextRequest) {
     const dealStages = (formData.get("dealStages") as string) || "";
     const objectionFocus = (formData.get("objectionFocus") as string) || "";
 
-    // Write file to temp disk
-    const ext = file.name.endsWith(".m4a") ? ".m4a" : ".mp3";
+    // Download the file from Vercel Blob to a temp file
+    const audioResponse = await fetch(blobUrl);
+    if (!audioResponse.ok) throw new Error("Failed to retrieve uploaded audio");
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+
+    const ext = fileName.endsWith(".m4a") ? ".m4a" : ".mp3";
     tmpPath = join(tmpdir(), `klosi-${randomUUID()}${ext}`);
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(tmpPath, buffer);
+    await writeFile(tmpPath, audioBuffer);
+
+    // Delete blob immediately after downloading (privacy-first)
+    await del(blobUrl).catch(() => {});
+    blobUrl = null;
 
     // Transcribe with Whisper
     const { createReadStream } = await import("fs");
@@ -98,6 +109,7 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
 
   } catch (e: unknown) {
     if (tmpPath) await unlink(tmpPath).catch(() => {});
+    if (blobUrl) await del(blobUrl).catch(() => {});
     console.error(e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Analysis failed" },
