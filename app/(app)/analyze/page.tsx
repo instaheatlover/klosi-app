@@ -2,7 +2,6 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { upload } from "@vercel/blob/client";
 
 type Step = "uploading" | "transcribing" | "analyzing" | "done";
 type Notes = {
@@ -41,22 +40,34 @@ export default function AnalyzePage() {
     try {
       setStep("uploading");
 
-      // Reconstruct the File from the object URL
+      // Reconstruct the file from the object URL
       const fileBlob = await fetch(objectUrl).then(r => r.blob());
-      const file = new File([fileBlob], fileName, { type: fileType });
 
-      // Upload directly from the browser to Vercel Blob — bypasses Vercel's 4.5MB request limit
-      const blob = await upload(fileName, file, {
-        access: "public",
-        handleUploadUrl: "/api/blob-upload",
-        contentType: fileType,
+      // Step 1: Get a signed upload URL from our server
+      const urlRes = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName }),
       });
+      if (!urlRes.ok) {
+        const err = await urlRes.json().catch(() => ({ error: "Failed to get upload URL" }));
+        throw new Error(err.error || "Failed to get upload URL");
+      }
+      const { signedUrl, path } = await urlRes.json();
+
+      // Step 2: Upload directly from browser to Supabase Storage — no Vercel size limits
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        body: fileBlob,
+        headers: { "Content-Type": fileType },
+      });
+      if (!uploadRes.ok) throw new Error("File upload failed");
 
       setStep("transcribing");
 
-      // Send only the blob URL to the analyze route — tiny payload, no size issues
+      // Step 3: Send the storage path to analyze — server downloads, transcribes, deletes
       const formData = new FormData();
-      formData.append("blobUrl", blob.url);
+      formData.append("storagePath", path);
       formData.append("fileName", fileName);
       formData.append("script", localStorage.getItem("klosi_script") || "");
       formData.append("noteTemplate", localStorage.getItem("klosi_note_template") || "");

@@ -5,23 +5,26 @@ import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
-import { del } from "@vercel/blob";
+import { createClient } from "@supabase/supabase-js";
 
 export const maxDuration = 120;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: NextRequest) {
   let tmpPath: string | null = null;
-  let blobUrl: string | null = null;
 
   try {
     const formData = await req.formData();
-    blobUrl = (formData.get("blobUrl") as string) || null;
+    const storagePath = (formData.get("storagePath") as string) || null;
     const fileName = (formData.get("fileName") as string) || "recording.mp3";
 
-    if (!blobUrl) {
+    if (!storagePath) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
@@ -32,18 +35,23 @@ export async function POST(req: NextRequest) {
     const dealStages = (formData.get("dealStages") as string) || "";
     const objectionFocus = (formData.get("objectionFocus") as string) || "";
 
-    // Download the audio from Vercel Blob to a temp file
-    const audioRes = await fetch(blobUrl);
-    if (!audioRes.ok) throw new Error("Failed to retrieve uploaded audio");
-    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+    // Download the audio from Supabase Storage
+    const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+      .from("audio-uploads")
+      .download(storagePath);
 
+    if (downloadError || !fileData) {
+      throw new Error("Failed to retrieve uploaded audio");
+    }
+
+    // Write to temp file for Whisper
     const ext = fileName.endsWith(".m4a") ? ".m4a" : ".mp3";
     tmpPath = join(tmpdir(), `klosi-${randomUUID()}${ext}`);
-    await writeFile(tmpPath, audioBuffer);
+    const buffer = Buffer.from(await fileData.arrayBuffer());
+    await writeFile(tmpPath, buffer);
 
-    // Delete the blob immediately — privacy first
-    await del(blobUrl).catch(() => {});
-    blobUrl = null;
+    // Delete from Supabase immediately — privacy first
+    await supabaseAdmin.storage.from("audio-uploads").remove([storagePath]).catch(() => {});
 
     // Transcribe with Whisper
     const { createReadStream } = await import("fs");
@@ -103,7 +111,6 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
 
   } catch (e: unknown) {
     if (tmpPath) await unlink(tmpPath).catch(() => {});
-    if (blobUrl) await del(blobUrl).catch(() => {});
     console.error(e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Analysis failed" },
