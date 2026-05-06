@@ -6,15 +6,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 
-export const maxDuration = 120; // 2 min timeout for large files
-
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: "500mb",
-    },
-  },
-};
+export const maxDuration = 120;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -23,20 +15,28 @@ export async function POST(req: NextRequest) {
   let tmpPath: string | null = null;
 
   try {
-    const { fileData, fileName, script, noteTemplate, icp, product, dealStages, objectionFocus } = await req.json();
+    // Accept FormData — no JSON body size limits
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
 
-    if (!fileData) {
+    if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // 1. Convert base64 → temp file for Whisper
-    const base64 = fileData.split(",")[1];
-    const buffer = Buffer.from(base64, "base64");
-    const ext = fileName.endsWith(".m4a") ? ".m4a" : ".mp3";
+    const script = (formData.get("script") as string) || "";
+    const noteTemplate = (formData.get("noteTemplate") as string) || "";
+    const icp = (formData.get("icp") as string) || "";
+    const product = (formData.get("product") as string) || "";
+    const dealStages = (formData.get("dealStages") as string) || "";
+    const objectionFocus = (formData.get("objectionFocus") as string) || "";
+
+    // Write file to temp disk
+    const ext = file.name.endsWith(".m4a") ? ".m4a" : ".mp3";
     tmpPath = join(tmpdir(), `klosi-${randomUUID()}${ext}`);
+    const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(tmpPath, buffer);
 
-    // 2. Transcribe with Whisper
+    // Transcribe with Whisper
     const { createReadStream } = await import("fs");
     const transcription = await openai.audio.transcriptions.create({
       file: createReadStream(tmpPath) as Parameters<typeof openai.audio.transcriptions.create>[0]["file"],
@@ -44,13 +44,15 @@ export async function POST(req: NextRequest) {
       response_format: "text",
     });
 
-    // 3. Delete temp file immediately
+    // Delete temp file immediately
     await unlink(tmpPath).catch(() => {});
     tmpPath = null;
 
-    const transcript = typeof transcription === "string" ? transcription : (transcription as { text: string }).text;
+    const transcript = typeof transcription === "string"
+      ? transcription
+      : (transcription as { text: string }).text;
 
-    // 4. Build context for Claude
+    // Build context for Claude
     const context = [
       product && `Product/Service: ${product}`,
       icp && `Ideal Customer Profile: ${icp}`,
@@ -58,11 +60,9 @@ export async function POST(req: NextRequest) {
       objectionFocus && `Key Pain Points to Listen For: ${objectionFocus}`,
       script && `\nSales Script:\n${script}`,
       noteTemplate && `\nNote Template Example (match this format):\n${noteTemplate}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    ].filter(Boolean).join("\n");
 
-    // 5. Generate notes with Claude
+    // Generate notes with Claude
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
@@ -91,12 +91,12 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
     const content = message.content[0];
     if (content.type !== "text") throw new Error("Unexpected response from Claude");
 
-    // Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
+    // Strip markdown code fences if Claude wrapped the JSON
     const raw = content.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
     const notes = JSON.parse(raw);
     return NextResponse.json(notes);
+
   } catch (e: unknown) {
-    // Clean up temp file on error
     if (tmpPath) await unlink(tmpPath).catch(() => {});
     console.error(e);
     return NextResponse.json(

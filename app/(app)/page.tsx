@@ -28,15 +28,14 @@ export default function Home() {
 
   const handleAnalyze = () => {
     if (!file) return;
-    // Store file reference in sessionStorage as base64 for the analysis page
-    const reader = new FileReader();
-    reader.onload = () => {
-      sessionStorage.setItem("klosi_file_name", file.name);
-      sessionStorage.setItem("klosi_file_size", String(file.size));
-      sessionStorage.setItem("klosi_file_data", reader.result as string);
-      router.push("/analyze");
-    };
-    reader.readAsDataURL(file);
+    // Store the File object reference — we'll send it as FormData (no base64, no size limit)
+    sessionStorage.setItem("klosi_file_name", file.name);
+    sessionStorage.setItem("klosi_file_size", String(file.size));
+    // Store as object URL so the analyze page can retrieve the actual File
+    const objectUrl = URL.createObjectURL(file);
+    sessionStorage.setItem("klosi_file_object_url", objectUrl);
+    sessionStorage.setItem("klosi_file_type", file.type || "audio/mpeg");
+    router.push("/analyze");
   };
 
   const formatSize = (bytes: number) => {

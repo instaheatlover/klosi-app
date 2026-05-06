@@ -29,42 +29,54 @@ export default function AnalyzePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const fileData = sessionStorage.getItem("klosi_file_data");
+    const objectUrl = sessionStorage.getItem("klosi_file_object_url");
     const fileName = sessionStorage.getItem("klosi_file_name");
-    if (!fileData || !fileName) { router.push("/"); return; }
-    runAnalysis(fileData, fileName);
+    const fileType = sessionStorage.getItem("klosi_file_type") || "audio/mpeg";
+    if (!objectUrl || !fileName) { router.push("/"); return; }
+    runAnalysis(objectUrl, fileName, fileType);
   }, []);
 
-  async function runAnalysis(fileData: string, fileName: string) {
+  async function runAnalysis(objectUrl: string, fileName: string, fileType: string) {
     try {
-      // Step 1: Upload + Transcribe
       setStep("transcribing");
-      const script = localStorage.getItem("klosi_script") || "";
-      const noteTemplate = localStorage.getItem("klosi_note_template") || "";
-      const icp = localStorage.getItem("klosi_icp") || "";
-      const product = localStorage.getItem("klosi_product") || "";
-      const dealStages = localStorage.getItem("klosi_deal_stages") || "";
-      const objectionFocus = localStorage.getItem("klosi_objection_focus") || "";
+
+      // Fetch the file from the object URL and send as FormData — no size limit issues
+      const fileBlob = await fetch(objectUrl).then(r => r.blob());
+      const file = new File([fileBlob], fileName, { type: fileType });
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("script", localStorage.getItem("klosi_script") || "");
+      formData.append("noteTemplate", localStorage.getItem("klosi_note_template") || "");
+      formData.append("icp", localStorage.getItem("klosi_icp") || "");
+      formData.append("product", localStorage.getItem("klosi_product") || "");
+      formData.append("dealStages", localStorage.getItem("klosi_deal_stages") || "");
+      formData.append("objectionFocus", localStorage.getItem("klosi_objection_focus") || "");
 
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileData, fileName, script, noteTemplate, icp, product, dealStages, objectionFocus }),
+        body: formData,
       });
 
       setStep("analyzing");
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Analysis failed");
+        const text = await res.text();
+        try {
+          const err = JSON.parse(text);
+          throw new Error(err.error || "Analysis failed");
+        } catch {
+          throw new Error(text || "Analysis failed");
+        }
       }
 
       const data = await res.json();
       setNotes(data);
       setStep("done");
 
-      // Clear file from session
-      sessionStorage.removeItem("klosi_file_data");
+      // Clean up session
+      sessionStorage.removeItem("klosi_file_object_url");
+      URL.revokeObjectURL(objectUrl);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     }
