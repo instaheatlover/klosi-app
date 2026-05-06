@@ -1,12 +1,13 @@
 "use client";
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 const FIELDS = [
-  { key: "klosi_product", label: "Product / Service", placeholder: "e.g. Klosi — AI Call Intelligence Platform" },
-  { key: "klosi_icp", label: "Ideal Customer Profile (ICP)", placeholder: "e.g. B2B SaaS teams, 10–200 employees, outbound-led" },
-  { key: "klosi_deal_stages", label: "Deal Stages", placeholder: "e.g. Discovery → Demo → Proposal → Legal → Close" },
-  { key: "klosi_objection_focus", label: "Pain Points to Look For", placeholder: "e.g. Low patient flow, slow revenue growth, lack of marketing system" },
+  { key: "product", label: "Product / Service", placeholder: "e.g. Klosi — AI Call Intelligence Platform" },
+  { key: "icp", label: "Ideal Customer Profile (ICP)", placeholder: "e.g. B2B SaaS teams, 10–200 employees, outbound-led" },
+  { key: "deal_stages", label: "Deal Stages", placeholder: "e.g. Discovery → Demo → Proposal → Legal → Close" },
+  { key: "pain_points", label: "Pain Points to Look For", placeholder: "e.g. Low patient flow, slow revenue growth, lack of marketing system" },
 ];
 
 export default function SettingsPage() {
@@ -14,29 +15,88 @@ export default function SettingsPage() {
   const [noteTemplate, setNoteTemplate] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
+  // Load settings from Supabase on mount
   useEffect(() => {
-    setScript(localStorage.getItem("klosi_script") || "");
-    setNoteTemplate(localStorage.getItem("klosi_note_template") || "");
-    const f: Record<string, string> = {};
-    FIELDS.forEach(({ key }) => { f[key] = localStorage.getItem(key) || ""; });
-    setFields(f);
+    const load = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("user_settings")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (data) {
+        setScript(data.script || "");
+        setNoteTemplate(data.note_template || "");
+        setFields({
+          product: data.product || "",
+          icp: data.icp || "",
+          deal_stages: data.deal_stages || "",
+          pain_points: data.pain_points || "",
+        });
+        // Also keep localStorage in sync for the API route
+        localStorage.setItem("klosi_script", data.script || "");
+        localStorage.setItem("klosi_note_template", data.note_template || "");
+        localStorage.setItem("klosi_product", data.product || "");
+        localStorage.setItem("klosi_icp", data.icp || "");
+        localStorage.setItem("klosi_deal_stages", data.deal_stages || "");
+        localStorage.setItem("klosi_objection_focus", data.pain_points || "");
+      }
+      setLoading(false);
+    };
+    load();
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const payload = {
+      user_id: user.id,
+      script,
+      note_template: noteTemplate,
+      product: fields.product || "",
+      icp: fields.icp || "",
+      deal_stages: fields.deal_stages || "",
+      pain_points: fields.pain_points || "",
+      updated_at: new Date().toISOString(),
+    };
+
+    // Upsert — creates a new row or updates existing one
+    await supabase.from("user_settings").upsert(payload, { onConflict: "user_id" });
+
+    // Keep localStorage in sync for the API route
     localStorage.setItem("klosi_script", script);
     localStorage.setItem("klosi_note_template", noteTemplate);
-    FIELDS.forEach(({ key }) => localStorage.setItem(key, fields[key] || ""));
+    localStorage.setItem("klosi_product", fields.product || "");
+    localStorage.setItem("klosi_icp", fields.icp || "");
+    localStorage.setItem("klosi_deal_stages", fields.deal_stages || "");
+    localStorage.setItem("klosi_objection_focus", fields.pain_points || "");
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center flex-1">
+        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 px-8 py-8 max-w-5xl w-full mx-auto">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-white">Sales Script & Settings</h1>
-        <p className="text-[13px] text-[#94A3B8] mt-1">Train Klosi to recognize your key signals on every call</p>
+        <p className="text-[13px] text-[#94A3B8] mt-1">Train Klosi to recognize your key signals on every call — saved to your account</p>
       </div>
 
       <div className="grid grid-cols-2 gap-6">
