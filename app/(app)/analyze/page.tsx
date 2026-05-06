@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { put } from "@vercel/blob/client";
 
 type Step = "uploading" | "transcribing" | "analyzing" | "done";
 type Notes = {
@@ -38,13 +39,37 @@ export default function AnalyzePage() {
 
   async function runAnalysis(objectUrl: string, fileName: string, fileType: string) {
     try {
-      setStep("transcribing");
+      setStep("uploading");
 
+      // Reconstruct the File from the object URL
       const fileBlob = await fetch(objectUrl).then(r => r.blob());
       const file = new File([fileBlob], fileName, { type: fileType });
 
+      // Get a short-lived upload token from our server
+      const tokenRes = await fetch("/api/blob-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pathname: `recordings/${fileName}` }),
+      });
+      if (!tokenRes.ok) {
+        const err = await tokenRes.json().catch(() => ({ error: "Token request failed" }));
+        throw new Error(err.error || "Failed to get upload token");
+      }
+      const { clientToken } = await tokenRes.json();
+
+      // Upload directly from the browser to Vercel Blob — bypasses Vercel's 4.5MB request limit entirely
+      const blob = await put(`recordings/${fileName}`, file, {
+        access: "public",
+        token: clientToken,
+        contentType: fileType,
+      });
+
+      setStep("transcribing");
+
+      // Send only the blob URL to the analyze route — tiny payload, no size issues
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("blobUrl", blob.url);
+      formData.append("fileName", fileName);
       formData.append("script", localStorage.getItem("klosi_script") || "");
       formData.append("noteTemplate", localStorage.getItem("klosi_note_template") || "");
       formData.append("icp", localStorage.getItem("klosi_icp") || "");
@@ -147,7 +172,7 @@ export default function AnalyzePage() {
         <div className="w-full max-w-3xl bg-[#131320] rounded-2xl p-12 flex flex-col items-center">
           <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
           <p className="text-white font-medium">
-            {step === "transcribing" ? "Transcribing your call..." : "Generating AI notes..."}
+            {step === "uploading" ? "Uploading your call..." : step === "transcribing" ? "Transcribing your call..." : "Generating AI notes..."}
           </p>
           <p className="text-[#94A3B8] text-sm mt-1">This usually takes 30–60 seconds</p>
         </div>

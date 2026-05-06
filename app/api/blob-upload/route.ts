@@ -8,18 +8,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     const clientToken = await generateClientTokenFromReadWriteToken({
       token: process.env.BLOB_READ_WRITE_TOKEN!,
       pathname: pathname || "recording.mp3",
-      maximumSizeInBytes: 500 * 1024 * 1024, // 500MB
-      validUntil: Date.now() + 2 * 60 * 60 * 1000, // 2 hours from now
-      allowedContentTypes: [
-        "audio/mpeg",
-        "audio/mp3",
-        "audio/mp4",
-        "audio/m4a",
-        "audio/x-m4a",
-        "audio/ogg",
-        "audio/wav",
-        "video/mp4",
-      ],
+      maximumSizeInBytes: 500 * 1024 * 1024,
+      validUntil: Date.now() + 30 * 60 * 1000, // 30 minutes
     });
 
     return NextResponse.json({ clientToken });
