@@ -61,7 +61,6 @@ export default function AnalyzePage() {
       const blob = await put(fileName, file, {
         access: "public",
         token: clientToken,
-        multipart: true, // handles large files reliably
         contentType: fileType,
       });
 

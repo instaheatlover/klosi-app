@@ -9,6 +9,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       token: process.env.BLOB_READ_WRITE_TOKEN!,
       pathname: pathname || "recording.mp3",
       maximumSizeInBytes: 500 * 1024 * 1024, // 500MB
+      validUntil: Date.now() + 2 * 60 * 60 * 1000, // 2 hours from now
       allowedContentTypes: [
         "audio/mpeg",
         "audio/mp3",
