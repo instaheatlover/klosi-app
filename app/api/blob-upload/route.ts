@@ -5,14 +5,13 @@ export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
   try {
     const jsonResponse = await handleUpload({
+      token: process.env.BLOB_READ_WRITE_TOKEN,
       body,
       request,
       onBeforeGenerateToken: async () => ({
         maximumSizeInBytes: 500 * 1024 * 1024,
       }),
-      onUploadCompleted: async () => {
-        // Nothing needed — we use the blob URL returned to the client
-      },
+      onUploadCompleted: async () => {},
     });
     return NextResponse.json(jsonResponse);
   } catch (error) {
