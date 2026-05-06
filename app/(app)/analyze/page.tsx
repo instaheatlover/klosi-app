@@ -2,7 +2,7 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { put } from "@vercel/blob/client";
+import { upload } from "@vercel/blob/client";
 
 type Step = "uploading" | "transcribing" | "analyzing" | "done";
 type Notes = {
@@ -45,22 +45,10 @@ export default function AnalyzePage() {
       const fileBlob = await fetch(objectUrl).then(r => r.blob());
       const file = new File([fileBlob], fileName, { type: fileType });
 
-      // Get a short-lived upload token from our server
-      const tokenRes = await fetch("/api/blob-upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pathname: `recordings/${fileName}` }),
-      });
-      if (!tokenRes.ok) {
-        const err = await tokenRes.json().catch(() => ({ error: "Token request failed" }));
-        throw new Error(err.error || "Failed to get upload token");
-      }
-      const { clientToken } = await tokenRes.json();
-
-      // Upload directly from the browser to Vercel Blob — bypasses Vercel's 4.5MB request limit entirely
-      const blob = await put(`recordings/${fileName}`, file, {
+      // Upload directly from the browser to Vercel Blob — bypasses Vercel's 4.5MB request limit
+      const blob = await upload(fileName, file, {
         access: "public",
-        token: clientToken,
+        handleUploadUrl: "/api/blob-upload",
         contentType: fileType,
       });
 
