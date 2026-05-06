@@ -5,7 +5,6 @@ import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
-import { del } from "@vercel/blob";
 
 export const maxDuration = 120;
 
@@ -14,16 +13,12 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
   let tmpPath: string | null = null;
-  let blobUrl: string | null = null;
 
   try {
     const formData = await req.formData();
+    const file = formData.get("file") as File | null;
 
-    // New flow: file is uploaded to Vercel Blob, we receive the URL
-    blobUrl = (formData.get("blobUrl") as string) || null;
-    const fileName = (formData.get("fileName") as string) || "recording.mp3";
-
-    if (!blobUrl) {
+    if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
@@ -34,18 +29,11 @@ export async function POST(req: NextRequest) {
     const dealStages = (formData.get("dealStages") as string) || "";
     const objectionFocus = (formData.get("objectionFocus") as string) || "";
 
-    // Download the file from Vercel Blob to a temp file
-    const audioResponse = await fetch(blobUrl);
-    if (!audioResponse.ok) throw new Error("Failed to retrieve uploaded audio");
-    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-
-    const ext = fileName.endsWith(".m4a") ? ".m4a" : ".mp3";
+    // Write file to temp disk
+    const ext = file.name.endsWith(".m4a") ? ".m4a" : ".mp3";
     tmpPath = join(tmpdir(), `klosi-${randomUUID()}${ext}`);
-    await writeFile(tmpPath, audioBuffer);
-
-    // Delete blob immediately after downloading (privacy-first)
-    await del(blobUrl).catch(() => {});
-    blobUrl = null;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await writeFile(tmpPath, buffer);
 
     // Transcribe with Whisper
     const { createReadStream } = await import("fs");
@@ -102,14 +90,12 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
     const content = message.content[0];
     if (content.type !== "text") throw new Error("Unexpected response from Claude");
 
-    // Strip markdown code fences if Claude wrapped the JSON
     const raw = content.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
     const notes = JSON.parse(raw);
     return NextResponse.json(notes);
 
   } catch (e: unknown) {
     if (tmpPath) await unlink(tmpPath).catch(() => {});
-    if (blobUrl) await del(blobUrl).catch(() => {});
     console.error(e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Analysis failed" },

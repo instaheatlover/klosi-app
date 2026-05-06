@@ -2,7 +2,6 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { put } from "@vercel/blob/client";
 
 type Step = "uploading" | "transcribing" | "analyzing" | "done";
 type Notes = {
@@ -39,37 +38,13 @@ export default function AnalyzePage() {
 
   async function runAnalysis(objectUrl: string, fileName: string, fileType: string) {
     try {
-      setStep("uploading");
+      setStep("transcribing");
 
-      // Fetch file from object URL
       const fileBlob = await fetch(objectUrl).then(r => r.blob());
       const file = new File([fileBlob], fileName, { type: fileType });
 
-      // Step 1: Get a client token from our server
-      const tokenRes = await fetch("/api/blob-upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pathname: fileName }),
-      });
-      if (!tokenRes.ok) {
-        const err = await tokenRes.json().catch(() => ({ error: "Token request failed" }));
-        throw new Error(err.error || "Failed to get upload token");
-      }
-      const { clientToken } = await tokenRes.json();
-
-      // Step 2: Upload directly to Vercel Blob using the token (bypasses 4.5MB Vercel limit)
-      const blob = await put(fileName, file, {
-        access: "public",
-        token: clientToken,
-        contentType: fileType,
-      });
-
-      setStep("transcribing");
-
-      // Step 3: Send blob URL to our API route for transcription + note generation
       const formData = new FormData();
-      formData.append("blobUrl", blob.url);
-      formData.append("fileName", fileName);
+      formData.append("file", file);
       formData.append("script", localStorage.getItem("klosi_script") || "");
       formData.append("noteTemplate", localStorage.getItem("klosi_note_template") || "");
       formData.append("icp", localStorage.getItem("klosi_icp") || "");
@@ -95,7 +70,6 @@ export default function AnalyzePage() {
       setNotes(data);
       setStep("done");
 
-      // Clean up session
       sessionStorage.removeItem("klosi_file_object_url");
       URL.revokeObjectURL(objectUrl);
     } catch (e: unknown) {
@@ -128,7 +102,6 @@ export default function AnalyzePage() {
 
   return (
     <div className="flex flex-col items-center flex-1 px-6 py-12">
-      {/* Top bar */}
       <div className="w-full max-w-3xl flex items-center justify-between mb-8">
         <div>
           <h1 className="text-xl font-semibold text-white">AI Notes</h1>
@@ -143,7 +116,6 @@ export default function AnalyzePage() {
         )}
       </div>
 
-      {/* Progress steps */}
       <div className="w-full max-w-3xl bg-[#131320] rounded-2xl p-6 mb-6">
         <p className="text-[11px] text-[#94A3B8] uppercase tracking-wider mb-4">Analysis progress</p>
         <div className="flex items-center gap-0">
@@ -171,32 +143,25 @@ export default function AnalyzePage() {
         </div>
       </div>
 
-      {/* Loading state */}
       {step !== "done" && (
         <div className="w-full max-w-3xl bg-[#131320] rounded-2xl p-12 flex flex-col items-center">
           <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
           <p className="text-white font-medium">
-            {step === "uploading" ? "Uploading your call..." : step === "transcribing" ? "Transcribing your call..." : "Generating AI notes..."}
+            {step === "transcribing" ? "Transcribing your call..." : "Generating AI notes..."}
           </p>
           <p className="text-[#94A3B8] text-sm mt-1">This usually takes 30–60 seconds</p>
         </div>
       )}
 
-      {/* Results */}
       {step === "done" && notes && (
         <div className="w-full max-w-3xl space-y-4">
-          {/* Export card */}
           <div className="bg-[#131320] rounded-2xl p-6">
             <h2 className="text-[18px] font-semibold text-white mb-1">Export to CRM</h2>
             <p className="text-[13px] text-[#94A3B8] mb-4">Your AI-generated notes are ready — copy or paste into your CRM</p>
-
-            {/* CRM preview */}
             <div className="bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl p-4 mb-4">
               <p className="text-[10px] font-medium text-[#94A3B8] uppercase tracking-wider mb-2">CRM Note Preview</p>
               <p className="text-[13px] text-[#94A3B8] leading-relaxed">{notes.crmNote}</p>
             </div>
-
-            {/* Copy button */}
             <button
               onClick={copyToClipboard}
               className="w-full py-3.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-[15px] font-semibold transition-colors"
@@ -205,9 +170,7 @@ export default function AnalyzePage() {
             </button>
           </div>
 
-          {/* Two-column insights */}
           <div className="grid grid-cols-2 gap-4">
-            {/* Key Pain Points */}
             <div className="bg-[#131320] rounded-2xl p-5 border-l-[3px] border-red-400">
               <h3 className="text-[12px] font-semibold text-red-400 mb-3">Key Pain Points</h3>
               <ul className="space-y-2">
@@ -218,8 +181,6 @@ export default function AnalyzePage() {
                 ))}
               </ul>
             </div>
-
-            {/* Next Steps */}
             <div className="bg-[#131320] rounded-2xl p-5 border-l-[3px] border-emerald-400">
               <h3 className="text-[12px] font-semibold text-emerald-400 mb-3">Next Steps</h3>
               <ul className="space-y-2">
@@ -232,7 +193,6 @@ export default function AnalyzePage() {
             </div>
           </div>
 
-          {/* Full notes */}
           <div className="bg-[#131320] rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-5">
               <span className="px-3 py-1 bg-indigo-500/15 text-indigo-400 text-[12px] font-medium rounded-lg">AI Output</span>
