@@ -8,7 +8,7 @@ const nav = [
   { label: "Home", href: "/" },
   { label: "Lead Scraper", href: "/leads" },
   { label: "Settings", href: "/settings" },
-
+];
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
