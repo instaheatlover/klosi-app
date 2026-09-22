@@ -185,7 +185,7 @@ export default function LeadsPage() {
                       </td>
                       <td className="py-2 pr-4 text-[13px] text-[#94A3B8] max-w-[220px] truncate">
                         {lead.website ? (
-                          
+                          <a
                             href={lead.website}
                             target="_blank"
                             rel="noreferrer"
