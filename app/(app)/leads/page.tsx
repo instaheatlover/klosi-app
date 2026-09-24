@@ -53,12 +53,16 @@ export default function LeadsPage() {
   const [hydrated, setHydrated] = useState(false);
 
   // Load any previously saved leads on first render so the running list
-  // survives page reloads and navigating away and back.
+  // survives page reloads and navigating away and back. Reading
+  // localStorage only works on the client, so this must happen in an
+  // effect (a lazy useState initializer would cause a hydration
+  // mismatch) — the setState calls here are intentional.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (Array.isArray(parsed)) setLeads(parsed);
       }
     } catch {
