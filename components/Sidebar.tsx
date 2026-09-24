@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 
 const nav = [
-  { label: "Home", href: "/" },
+  { label: "Notes Generator", href: "/" },
   { label: "Lead Scraper", href: "/leads" },
   { label: "Settings", href: "/settings" },
 ];
